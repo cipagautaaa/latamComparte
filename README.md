@@ -1,8 +1,8 @@
-# LatamComparte Backend
+# LatamComparte 
 
 ## Descripción
 
-LatamComparte es una aplicación backend desarrollada en Node.js que proporciona una API para gestionar noticias, países, solicitudes, testimonios y usuarios en la región de Latinoamérica. Este proyecto facilita el intercambio de información y recursos entre usuarios de diferentes países de la región.
+LatamComparte es una aplicación backend desarrollada en Node.js y Flutter que proporciona una API para gestionar noticias, países, solicitudes, testimonios y usuarios en la región de Latinoamérica. Este proyecto facilita el intercambio de información y recursos entre usuarios de diferentes países de la región.
 
 ## Características
 
@@ -16,6 +16,7 @@ LatamComparte es una aplicación backend desarrollada en Node.js que proporciona
 ## Tecnologías Utilizadas
 
 - Node.js
+- Flutter
 - Express.js
 - MongoDB (asumiendo por los modelos)
 - JWT para autenticación
