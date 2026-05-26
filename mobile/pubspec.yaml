@@ -1,0 +1,54 @@
+name: latinoamerica_comparte_admin
+description: CMS Admin MultipaÃ­s - LatinoamÃ©rica Comparte
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP Client
+  dio: ^5.4.3
+  
+  # Almacenamiento seguro
+  flutter_secure_storage: ^9.0.0
+  
+  # GestiÃ³n de estado
+  provider: ^6.1.2
+  
+  # NavegaciÃ³n
+  go_router: ^14.0.2
+  
+  # Fuentes
+  google_fonts: ^6.2.1
+  
+  # ImÃ¡genes de red con cachÃ©
+  cached_network_image: ^3.3.1
+  
+  # Validaciones de formularios
+  form_validator: ^2.1.1
+  
+  # Formateo de fechas
+  intl: ^0.19.0
+  
+  # JSON serialization
+  json_annotation: ^4.9.0
+  
+  # Iconos de Material
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.9
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
