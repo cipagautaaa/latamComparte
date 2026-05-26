@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ESTADOS_TESTIMONIO } = require('../constants/estados');
 
 const testimonioSchema = new mongoose.Schema({
   nombre: {
@@ -24,13 +25,11 @@ const testimonioSchema = new mongoose.Schema({
   facebook_url:  { type: String, default: null },
   estado: {
     type: String,
-    enum: ['borrador', 'publicado', 'despublicado'],
-    default: 'borrador',
+    enum: ESTADOS_TESTIMONIO,
+    default: ESTADOS_TESTIMONIO[0], // 'borrador'
   },
-  fecha_creacion: {
-    type: Date,
-    default: Date.now,
-  },
+}, {
+  timestamps: { createdAt: 'fecha_creacion', updatedAt: 'fecha_actualizacion' },
 });
 
 module.exports = mongoose.model('Testimonio', testimonioSchema);

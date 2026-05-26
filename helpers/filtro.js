@@ -30,4 +30,16 @@ const validarId = (req, res, next) => {
   next();
 };
 
-module.exports = { buildFiltro, parsePaginacion, validarId };
+// Verifica que el recurso pertenece al país del usuario autenticado.
+// Retorna false (y ya respondió 403) si el acceso está denegado; true si procede.
+// Uso: if (!verificarAccesoPais(req, res, recurso.pais?._id)) return;
+const verificarAccesoPais = (req, res, paisId) => {
+  if (!req.paisFiltro) return true;
+  if (!paisId || paisId.toString() !== req.paisFiltro.toString()) {
+    res.status(403).json({ message: 'Acceso denegado' });
+    return false;
+  }
+  return true;
+};
+
+module.exports = { buildFiltro, parsePaginacion, validarId, verificarAccesoPais };

@@ -1,16 +1,15 @@
 const { body, validationResult } = require('express-validator');
 const Noticia    = require('../models/Noticia');
-const { ESTADOS_CONTENIDO }               = require('../constants/estados');
-const { buildFiltro, parsePaginacion, verificarAccesoPais } = require('../helpers/filtro');
-
-// Límite de seguridad para endpoints públicos (sin paginación explícita)
-const LIMITE_PUBLICO = 50;
+const Testimonio = require('../models/Testimonio');
+const Solicitud  = require('../models/Solicitud');
+const { ESTADOS_CONTENIDO }     = require('../constants/estados');
+const { buildFiltro, parsePaginacion } = require('../helpers/filtro');
 
 const crearNoticiaValidation = [
-  body('titulo').notEmpty().withMessage('Título requerido').trim(),
-  body('resumen').notEmpty().withMessage('Resumen requerido').trim(),
-  body('contenido').notEmpty().withMessage('Contenido requerido').trim(),
-  body('autor').notEmpty().withMessage('Autor requerido').trim(),
+  body('titulo').notEmpty().withMessage('Título requerido'),
+  body('resumen').notEmpty().withMessage('Resumen requerido'),
+  body('contenido').notEmpty().withMessage('Contenido requerido'),
+  body('autor').notEmpty().withMessage('Autor requerido'),
   body('pais').notEmpty().withMessage('País requerido'),
 ];
 
@@ -34,8 +33,7 @@ const listarNoticias = async (req, res) => {
   }
 };
 
-// Sin auth: visitante y formulario público las consumen.
-// LIMITE_PUBLICO evita que un solo request vacíe la colección completa.
+// Sin auth: visitante y formulario público las consumen
 const listarNoticiasPublico = async (req, res) => {
   try {
     const filtro = { estado: 'publicado' };
@@ -43,12 +41,41 @@ const listarNoticiasPublico = async (req, res) => {
 
     const noticias = await Noticia.find(filtro)
       .populate('pais', 'nombre codigo')
-      .sort({ fecha_creacion: -1 })
-      .limit(LIMITE_PUBLICO);
+      .sort({ fecha_creacion: -1 });
 
     res.json(noticias);
   } catch (err) {
     res.status(500).json({ message: 'Error al obtener noticias' });
+  }
+};
+
+// Reúne conteos de noticias, testimonios y solicitudes en una llamada
+// para evitar que el dashboard haga tres requests al cargar
+const estadisticasDashboard = async (req, res) => {
+  try {
+    const filtro = req.paisFiltro ? { pais: req.paisFiltro } : {};
+
+    const [
+      totalNoticias,
+      noticiasActivas,
+      totalTestimonios,
+      testimoniosPublicados,
+      solicitudesPendientes,
+    ] = await Promise.all([
+      Noticia.countDocuments(filtro),
+      Noticia.countDocuments({ ...filtro, estado: 'publicado' }),
+      Testimonio.countDocuments(filtro),
+      Testimonio.countDocuments({ ...filtro, estado: 'publicado' }),
+      Solicitud.countDocuments({ ...filtro, estado: 'pendiente' }),
+    ]);
+
+    res.json({
+      noticias:    { total: totalNoticias,    activas:    noticiasActivas },
+      testimonios: { total: totalTestimonios, publicados: testimoniosPublicados },
+      solicitudes: { pendientes: solicitudesPendientes },
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Error al obtener estadísticas' });
   }
 };
 
@@ -57,7 +84,9 @@ const detalleNoticia = async (req, res) => {
     const noticia = await Noticia.findById(req.params.id).populate('pais', 'nombre codigo');
     if (!noticia) return res.status(404).json({ message: 'Noticia no encontrada' });
 
-    if (!verificarAccesoPais(req, res, noticia.pais?._id)) return;
+    if (req.paisFiltro && noticia.pais._id.toString() !== req.paisFiltro.toString()) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
 
     res.json(noticia);
   } catch (err) {
@@ -73,15 +102,7 @@ const crearNoticia = async (req, res) => {
 
   try {
     const { titulo, resumen, contenido, autor, imagen_url, pais, estado } = req.body;
-
-    // Los editores/admins de un país no pueden asignar la noticia a otro país.
     const paisFinal = req.paisFiltro || pais;
-    if (!paisFinal) return res.status(400).json({ message: 'País requerido' });
-
-    // Validar estado si se provee
-    if (estado && !ESTADOS_CONTENIDO.includes(estado)) {
-      return res.status(400).json({ message: `Estado no válido. Valores permitidos: ${ESTADOS_CONTENIDO.join(', ')}` });
-    }
 
     const noticia = await Noticia.create({
       titulo, resumen, contenido, autor,
@@ -93,7 +114,6 @@ const crearNoticia = async (req, res) => {
     const populated = await noticia.populate('pais', 'nombre codigo');
     res.status(201).json(populated);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error al crear noticia' });
   }
 };
@@ -103,9 +123,11 @@ const editarNoticia = async (req, res) => {
     const noticia = await Noticia.findById(req.params.id).populate('pais');
     if (!noticia) return res.status(404).json({ message: 'Noticia no encontrada' });
 
-    if (!verificarAccesoPais(req, res, noticia.pais?._id)) return;
+    if (req.paisFiltro && noticia.pais._id.toString() !== req.paisFiltro.toString()) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
 
-    // Lista explícita para evitar sobrescribir campos protegidos (_id, pais, __v)
+    // Lista explícita para que no se pueda sobreescribir el _id ni el país
     const camposPermitidos = ['titulo', 'resumen', 'contenido', 'autor', 'imagen_url', 'estado'];
     camposPermitidos.forEach((campo) => {
       if (req.body[campo] !== undefined) noticia[campo] = req.body[campo];
@@ -123,13 +145,15 @@ const cambiarEstado = async (req, res) => {
   try {
     const { estado } = req.body;
     if (!ESTADOS_CONTENIDO.includes(estado)) {
-      return res.status(400).json({ message: `Estado no válido. Valores permitidos: ${ESTADOS_CONTENIDO.join(', ')}` });
+      return res.status(400).json({ message: 'Estado no válido' });
     }
 
     const noticia = await Noticia.findById(req.params.id).populate('pais');
     if (!noticia) return res.status(404).json({ message: 'Noticia no encontrada' });
 
-    if (!verificarAccesoPais(req, res, noticia.pais?._id)) return;
+    if (req.paisFiltro && noticia.pais._id.toString() !== req.paisFiltro.toString()) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
 
     noticia.estado = estado;
     await noticia.save();
@@ -144,7 +168,9 @@ const eliminarNoticia = async (req, res) => {
     const noticia = await Noticia.findById(req.params.id).populate('pais');
     if (!noticia) return res.status(404).json({ message: 'Noticia no encontrada' });
 
-    if (!verificarAccesoPais(req, res, noticia.pais?._id)) return;
+    if (req.paisFiltro && noticia.pais._id.toString() !== req.paisFiltro.toString()) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
 
     await noticia.deleteOne();
     res.json({ message: 'Noticia eliminada exitosamente' });
@@ -157,6 +183,7 @@ module.exports = {
   crearNoticiaValidation,
   listarNoticias,
   listarNoticiasPublico,
+  estadisticasDashboard,
   detalleNoticia,
   crearNoticia,
   editarNoticia,

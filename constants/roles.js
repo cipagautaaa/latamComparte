@@ -5,7 +5,10 @@ const ROLES = {
   VISITANTE:  'visitante',
 };
 
-// Roles que pueden gestionar contenido de administración
+// Roles de gestión exclusiva (portales, usuarios, configuración global)
 const ROLES_ADMIN = [ROLES.SUPERADMIN, ROLES.ADMIN_PAIS];
 
-module.exports = { ROLES, ROLES_ADMIN };
+// Roles que pueden crear/editar/publicar contenido (noticias, testimonios)
+const ROLES_CONTENT = [ROLES.SUPERADMIN, ROLES.ADMIN_PAIS, ROLES.EDITOR];
+
+module.exports = { ROLES, ROLES_ADMIN, ROLES_CONTENT };

@@ -10,6 +10,7 @@ const paisesRoutes      = require('./routes/paises');
 const solicitudesRoutes = require('./routes/solicitudes');
 const testimoniosRoutes = require('./routes/testimonios');
 const noticiasRoutes    = require('./routes/noticias');
+const dashboardRoutes   = require('./routes/dashboard');
 
 const app = express();
 
@@ -23,8 +24,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// 1 MB es suficiente para un CMS de texto; 10 MB facilitaría ataques DoS
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Límite general: 200 requests por 15 min por IP
 const limiterGeneral = rateLimit({
@@ -60,24 +62,42 @@ app.use('/api/paises',      paisesRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/testimonios', testimoniosRoutes);
 app.use('/api/noticias',    noticiasRoutes);
+app.use('/api/dashboard',   dashboardRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Latinoamérica Comparte API funcionando' });
 });
 
+// 404 — ruta no registrada
 app.use((req, res) => {
   res.status(404).json({ message: 'Ruta no encontrada' });
 });
 
-app.use((err, req, res, next) => {
+// Manejador global de errores
+app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   console.error(err.stack);
   res.status(err.status || 500).json({ message: err.message || 'Error interno del servidor' });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
   console.log(`📱 API disponible en http://localhost:${PORT}/api`);
 });
+
+// Graceful shutdown: cierra conexiones abiertas antes de salir.
+// Evita pérdida de datos y permite que el orquestador (PM2, Docker) reinicie limpiamente.
+const shutdown = (signal) => {
+  console.log(`\n${signal} recibido. Cerrando servidor...`);
+  server.close(() => {
+    mongoose.connection.close(false).then(() => {
+      console.log('✅ Conexiones cerradas. Servidor apagado.');
+      process.exit(0);
+    });
+  });
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
 
 module.exports = app;

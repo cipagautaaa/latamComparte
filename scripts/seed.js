@@ -8,6 +8,13 @@ const Testimonio = require('../models/Testimonio');
 const Noticia   = require('../models/Noticia');
 
 async function seed() {
+  // Barrera de seguridad: el seed borra TODOS los datos.
+  // En producción esto sería catastrófico, así que lo bloqueamos explícitamente.
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ El seed no puede ejecutarse en producción (NODE_ENV=production).');
+    process.exit(1);
+  }
+
   try {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('✅ MongoDB conectado');

@@ -1,11 +1,13 @@
 const mongoose = require('mongoose');
 const bcrypt   = require('bcryptjs');
+const { ROLES } = require('../constants/roles');
 
 const usuarioSchema = new mongoose.Schema({
   nombre: {
     type: String,
     required: [true, 'El nombre es requerido'],
     trim: true,
+    maxlength: [100, 'El nombre no puede superar 100 caracteres'],
   },
   correo: {
     type: String,
@@ -13,16 +15,19 @@ const usuarioSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     trim: true,
+    match: [/^\S+@\S+\.\S+$/, 'Formato de correo inválido'],
   },
   // El campo se llama password_hash para dejar claro que nunca se guarda en texto plano
   password_hash: {
     type: String,
     required: [true, 'La contraseña es requerida'],
+    minlength: [6, 'La contraseña debe tener al menos 6 caracteres'],
   },
   rol: {
+    // Fuente única de verdad: los valores vienen de constants/roles.js
     type: String,
-    enum: ['superadmin', 'admin_pais', 'editor', 'visitante'],
-    default: 'editor',
+    enum: Object.values(ROLES),
+    default: ROLES.EDITOR,
   },
   // Solo aplica para admin_pais y editor; superadmin y visitante lo dejan en null
   pais_asignado: {

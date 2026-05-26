@@ -19,11 +19,19 @@ const listarPaisesPublico = async (req, res) => {
 };
 
 const actualizarEstado = async (req, res) => {
+  const { activo } = req.body;
+
+  // Validar que el campo sea estrictamente booleano para evitar coerciones inesperadas.
+  // JSON envía true/false; una cadena "false" sería truthy sin esta comprobación.
+  if (typeof activo !== 'boolean') {
+    return res.status(400).json({ message: 'El campo "activo" debe ser un booleano' });
+  }
+
   try {
     const pais = await Pais.findByIdAndUpdate(
       req.params.id,
-      { activo: req.body.activo },
-      { new: true }
+      { activo },
+      { new: true, runValidators: true }
     );
     if (!pais) return res.status(404).json({ message: 'País no encontrado' });
     res.json(pais);

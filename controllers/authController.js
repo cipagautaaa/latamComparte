@@ -66,14 +66,10 @@ const logout = (req, res) => {
   res.json({ message: 'Sesión cerrada exitosamente' });
 };
 
-// La app llama a este endpoint al iniciar para verificar que el token guardado sigue válido
-const getMe = async (req, res) => {
-  try {
-    const usuario = await Usuario.findById(req.usuario._id).populate('pais_asignado');
-    res.json(usuario);
-  } catch (err) {
-    res.status(500).json({ message: 'Error del servidor' });
-  }
+// La app llama a este endpoint al iniciar para verificar que el token guardado sigue válido.
+// verificarToken ya hizo la consulta a BD y populó req.usuario, así que no la repetimos.
+const getMe = (req, res) => {
+  res.json(req.usuario);
 };
 
 module.exports = { loginValidation, login, logout, getMe };

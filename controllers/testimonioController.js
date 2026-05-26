@@ -1,12 +1,15 @@
 const { body, validationResult } = require('express-validator');
 const Testimonio = require('../models/Testimonio');
-const { ESTADOS_TESTIMONIO }         = require('../constants/estados');
-const { buildFiltro, parsePaginacion } = require('../helpers/filtro');
+const { ESTADOS_TESTIMONIO }            = require('../constants/estados');
+const { buildFiltro, parsePaginacion, verificarAccesoPais } = require('../helpers/filtro');
+
+// Límite de seguridad para endpoints públicos (sin paginación explícita)
+const LIMITE_PUBLICO = 50;
 
 const crearTestimonioValidation = [
-  body('nombre').notEmpty().withMessage('Nombre requerido'),
-  body('foto_url').notEmpty().withMessage('Foto requerida'),
-  body('testimonio').notEmpty().withMessage('Texto del testimonio requerido'),
+  body('nombre').notEmpty().withMessage('Nombre requerido').trim(),
+  body('foto_url').notEmpty().isURL().withMessage('foto_url debe ser una URL válida'),
+  body('testimonio').notEmpty().withMessage('Texto del testimonio requerido').trim(),
   body('pais').notEmpty().withMessage('País requerido'),
 ];
 
@@ -30,7 +33,8 @@ const listarTestimonios = async (req, res) => {
   }
 };
 
-// Sin auth: lo usan la vista pública y la app del visitante
+// Sin auth: lo usan la vista pública y la app del visitante.
+// LIMITE_PUBLICO evita que un solo request vacíe la colección completa.
 const listarTestimoniosPublico = async (req, res) => {
   try {
     const filtro = { estado: 'publicado' };
@@ -38,7 +42,8 @@ const listarTestimoniosPublico = async (req, res) => {
 
     const testimonios = await Testimonio.find(filtro)
       .populate('pais', 'nombre codigo')
-      .sort({ fecha_creacion: -1 });
+      .sort({ fecha_creacion: -1 })
+      .limit(LIMITE_PUBLICO);
 
     res.json(testimonios);
   } catch (err) {
@@ -51,9 +56,7 @@ const detalleTestimonio = async (req, res) => {
     const testimonio = await Testimonio.findById(req.params.id).populate('pais', 'nombre codigo');
     if (!testimonio) return res.status(404).json({ message: 'Testimonio no encontrado' });
 
-    if (req.paisFiltro && testimonio.pais._id.toString() !== req.paisFiltro.toString()) {
-      return res.status(403).json({ message: 'Acceso denegado' });
-    }
+    if (!verificarAccesoPais(req, res, testimonio.pais?._id)) return;
 
     res.json(testimonio);
   } catch (err) {
@@ -69,7 +72,15 @@ const crearTestimonio = async (req, res) => {
 
   try {
     const { nombre, foto_url, testimonio, pais, instagram_url, facebook_url, estado } = req.body;
+
+    // Los editores/admins de un país no pueden asignar el testimonio a otro país.
     const paisFinal = req.paisFiltro || pais;
+    if (!paisFinal) return res.status(400).json({ message: 'País requerido' });
+
+    // Validar estado si se provee
+    if (estado && !ESTADOS_TESTIMONIO.includes(estado)) {
+      return res.status(400).json({ message: `Estado no válido. Valores permitidos: ${ESTADOS_TESTIMONIO.join(', ')}` });
+    }
 
     const nuevo = await Testimonio.create({
       nombre, foto_url, testimonio,
@@ -82,6 +93,7 @@ const crearTestimonio = async (req, res) => {
     const populated = await nuevo.populate('pais', 'nombre codigo');
     res.status(201).json(populated);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Error al crear testimonio' });
   }
 };
@@ -91,10 +103,9 @@ const editarTestimonio = async (req, res) => {
     const testimonio = await Testimonio.findById(req.params.id).populate('pais');
     if (!testimonio) return res.status(404).json({ message: 'Testimonio no encontrado' });
 
-    if (req.paisFiltro && testimonio.pais._id.toString() !== req.paisFiltro.toString()) {
-      return res.status(403).json({ message: 'Acceso denegado' });
-    }
+    if (!verificarAccesoPais(req, res, testimonio.pais?._id)) return;
 
+    // Lista explícita para evitar sobrescribir campos protegidos (_id, pais, __v)
     const camposPermitidos = ['nombre', 'foto_url', 'testimonio', 'instagram_url', 'facebook_url', 'estado'];
     camposPermitidos.forEach((campo) => {
       if (req.body[campo] !== undefined) testimonio[campo] = req.body[campo];
@@ -112,15 +123,13 @@ const cambiarEstado = async (req, res) => {
   try {
     const { estado } = req.body;
     if (!ESTADOS_TESTIMONIO.includes(estado)) {
-      return res.status(400).json({ message: 'Estado no válido' });
+      return res.status(400).json({ message: `Estado no válido. Valores permitidos: ${ESTADOS_TESTIMONIO.join(', ')}` });
     }
 
     const testimonio = await Testimonio.findById(req.params.id).populate('pais');
     if (!testimonio) return res.status(404).json({ message: 'Testimonio no encontrado' });
 
-    if (req.paisFiltro && testimonio.pais._id.toString() !== req.paisFiltro.toString()) {
-      return res.status(403).json({ message: 'Acceso denegado' });
-    }
+    if (!verificarAccesoPais(req, res, testimonio.pais?._id)) return;
 
     testimonio.estado = estado;
     await testimonio.save();
@@ -135,9 +144,7 @@ const eliminarTestimonio = async (req, res) => {
     const testimonio = await Testimonio.findById(req.params.id).populate('pais');
     if (!testimonio) return res.status(404).json({ message: 'Testimonio no encontrado' });
 
-    if (req.paisFiltro && testimonio.pais._id.toString() !== req.paisFiltro.toString()) {
-      return res.status(403).json({ message: 'Acceso denegado' });
-    }
+    if (!verificarAccesoPais(req, res, testimonio.pais?._id)) return;
 
     await testimonio.deleteOne();
     res.json({ message: 'Testimonio eliminado exitosamente' });

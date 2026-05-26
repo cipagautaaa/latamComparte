@@ -1,14 +1,15 @@
+const { Types }  = require('mongoose');
 const { body, validationResult } = require('express-validator');
 const Solicitud = require('../models/Solicitud');
 const Pais      = require('../models/Pais');
-const { ESTADOS_SOLICITUD } = require('../constants/estados');
-const { parsePaginacion }   = require('../helpers/filtro');
+const { ESTADOS_SOLICITUD }  = require('../constants/estados');
+const { parsePaginacion, verificarAccesoPais } = require('../helpers/filtro');
 
 const crearSolicitudValidation = [
-  body('nombre').notEmpty().withMessage('Nombre requerido'),
-  body('correo').isEmail().withMessage('Correo inválido'),
-  body('telefono').notEmpty().withMessage('Teléfono requerido'),
-  body('finalidad').notEmpty().withMessage('Finalidad requerida'),
+  body('nombre').notEmpty().withMessage('Nombre requerido').trim(),
+  body('correo').isEmail().normalizeEmail().withMessage('Correo inválido'),
+  body('telefono').notEmpty().withMessage('Teléfono requerido').trim(),
+  body('finalidad').notEmpty().withMessage('Finalidad requerida').trim(),
   body('pais').notEmpty().withMessage('País requerido'),
 ];
 
@@ -21,11 +22,12 @@ const crearSolicitud = async (req, res) => {
   try {
     const { nombre, correo, telefono, finalidad, pais } = req.body;
 
-    // El campo pais puede venir como código ISO (ej: 'CO') o como ObjectId.
-    // Los ObjectIds de Mongo son 24 caracteres hex, así que 2 caracteres = código.
-    const paisDoc = pais.length === 2
-      ? await Pais.findOne({ codigo: pais.toUpperCase() })
-      : await Pais.findById(pais);
+    // Determinamos si el valor es un ObjectId de Mongo o un código ISO de 2 letras.
+    // Usamos Types.ObjectId.isValid() en lugar de comprobar la longitud del string,
+    // que es frágil (un código de 3 letras pasaría la validación sin ser un ObjectId).
+    const paisDoc = Types.ObjectId.isValid(pais)
+      ? await Pais.findById(pais)
+      : await Pais.findOne({ codigo: pais.toUpperCase() });
 
     if (!paisDoc) return res.status(400).json({ message: 'País no válido' });
 
@@ -66,11 +68,9 @@ const detalleSolicitud = async (req, res) => {
     const solicitud = await Solicitud.findById(req.params.id).populate('pais', 'nombre codigo');
     if (!solicitud) return res.status(404).json({ message: 'Solicitud no encontrada' });
 
-    // Aunque filtrarPorPais bloquea el listado, alguien podría intentar
-    // acceder directo al id de una solicitud de otro país
-    if (req.paisFiltro && solicitud.pais._id.toString() !== req.paisFiltro.toString()) {
-      return res.status(403).json({ message: 'Acceso denegado' });
-    }
+    // Aunque filtrarPorPais bloquea el listado, se valida también en el detalle
+    // para evitar que alguien acceda directamente al ID de otra región.
+    if (!verificarAccesoPais(req, res, solicitud.pais?._id)) return;
 
     res.json(solicitud);
   } catch (err) {
@@ -82,15 +82,13 @@ const actualizarEstado = async (req, res) => {
   try {
     const { estado } = req.body;
     if (!ESTADOS_SOLICITUD.includes(estado)) {
-      return res.status(400).json({ message: 'Estado no válido' });
+      return res.status(400).json({ message: `Estado no válido. Valores permitidos: ${ESTADOS_SOLICITUD.join(', ')}` });
     }
 
     const solicitud = await Solicitud.findById(req.params.id).populate('pais');
     if (!solicitud) return res.status(404).json({ message: 'Solicitud no encontrada' });
 
-    if (req.paisFiltro && solicitud.pais._id.toString() !== req.paisFiltro.toString()) {
-      return res.status(403).json({ message: 'Acceso denegado' });
-    }
+    if (!verificarAccesoPais(req, res, solicitud.pais?._id)) return;
 
     solicitud.estado = estado;
     await solicitud.save();
@@ -105,9 +103,7 @@ const eliminarSolicitud = async (req, res) => {
     const solicitud = await Solicitud.findById(req.params.id).populate('pais');
     if (!solicitud) return res.status(404).json({ message: 'Solicitud no encontrada' });
 
-    if (req.paisFiltro && solicitud.pais._id.toString() !== req.paisFiltro.toString()) {
-      return res.status(403).json({ message: 'Acceso denegado' });
-    }
+    if (!verificarAccesoPais(req, res, solicitud.pais?._id)) return;
 
     await solicitud.deleteOne();
     res.json({ message: 'Solicitud eliminada exitosamente' });
@@ -120,9 +116,6 @@ const estadisticasResumen = async (req, res) => {
   try {
     const filtro = req.paisFiltro ? { pais: req.paisFiltro } : {};
 
-    // Usamos Pais.collection.name en lugar de hardcodear 'pais' o 'paises':
-    // Mongoose pluraliza el nombre del modelo de forma impredecible en español,
-    // así que dejar que el propio modelo nos diga su nombre de colección es más seguro.
     const [stats, pendientes] = await Promise.all([
       Solicitud.aggregate([
         { $match: filtro },
